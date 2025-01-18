@@ -52,7 +52,11 @@ WORKDIR /root
 RUN --mount=type=cache,sharing=locked,mode=0777,target=/tmp/poetry_cache,id=poetry \
     --mount=type=bind,target=poetry.lock,src=poetry.lock \
     --mount=type=bind,target=pyproject.toml,src=pyproject.toml \
-    poetry install $PIP_INSTALL_ARGS
+     --mount=type=secret,id=GITHUB_TOKEN \
+    ( git config --global url."https://$$(cat /run/secrets/GITHUB_TOKEN)@github.com".insteadOf "https://github.com" \
+    && poetry install $PIP_INSTALL_ARGS \
+    && git config --global --unset url."https://$$(cat /run/secrets/GITHUB_TOKEN)@github.com".insteadOf "https://github.com" \
+    )
 
 WORKDIR /
 
@@ -198,7 +202,7 @@ def prepare_poetry_lock_command(image_spec: ImageSpec, pip_install_args: List[st
     _copy_lock_files_into_context(image_spec, "poetry.lock", tmp_dir)
 
     # --no-root: Do not install the current project
-    pip_install_args.extend(["--no-root"])
+    pip_install_args.extend(["--no-root", "--no-directory"])
     pip_install_args = " ".join(pip_install_args)
     return POETRY_LOCK_TEMPLATE.substitute(PIP_INSTALL_ARGS=pip_install_args)
 
@@ -422,6 +426,8 @@ class DefaultImageBuilder(ImageSpecBuilder):
                 "docker",
                 "image",
                 "build",
+                "--secret",
+                f"id=GITHUB_TOKEN,src={os.getenv('HOME')}/.github_token",
                 "--tag",
                 f"{image_spec.image_name()}",
                 "--platform",
